@@ -563,6 +563,7 @@ class LocalPlanner(object):
             # here we make a blank env to make codes work:
             env = gym.Env()
             env.num_envs = 1
+            # env.action_space = Discrete(self.n_a)
             env.action_space = Discrete(self.n_a)
             env.observation_space = Box(low=-999., high=999., shape=[self.D_s])
             # the copy from .learn() file:
@@ -659,7 +660,6 @@ class LocalPlanner(object):
             actor_lr=1e-4
             critic_lr=1e-3
             popart=False
-            gamma=0.99
             clip_norm=None
             nb_train_steps=50 # per epoch cycle and MPI worker,
             nb_eval_steps=100
@@ -667,13 +667,15 @@ class LocalPlanner(object):
             tau=0.01
             eval_env=None
             param_noise_adaption_interval=50
+
+            self.old_obss = False
             
             # modified ddpg
             network = self.alg_kwargs['network']
             network_kwargs = {}
-            gamma = 0.99
-            actor_lr = 0.0007
-            critic_lr = 0.0006
+            gamma = 0.9
+            actor_lr = 0.0007            
+            critic_lr = 0.006
             # lr = 0.0007
             max_grad_norm = 0.5
             nsteps = self.batch_size
@@ -689,8 +691,9 @@ class LocalPlanner(object):
             env.num_envs = 1
             env.action_space = Box(low= -0.2,
                                     high= 0.2, shape=(1,),
-                                    dtype=np.float32)
-            env.observation_space = Box(low=-999., high=999., shape=[self.D_s])
+                                    dtype=np.float64)
+            env.observation_space = Box(low=-99., high=99., shape=[self.D_s])
+            self.max_action = env.action_space.high[0]
             # the copy from .learn() file:
             set_global_seeds(seed)
 
@@ -744,10 +747,12 @@ class LocalPlanner(object):
 
             eval_episode_rewards_history = deque(maxlen=100)
             episode_rewards_history = deque(maxlen=100)
-            sess2 = U.get_session()
+            # sess1 = tf.Session()
+            # sess1.__enter__()
+            sess = U.get_session()
 
-            self.agent.initialize(sess2)
-            # sess2.graph.finalize()
+            self.agent.initialize(sess)
+            # sess.graph.finalize()
 
             self.agent.reset()
 
@@ -761,9 +766,9 @@ class LocalPlanner(object):
         else:
             self.build_computation_graph()
         
-        self.sess = tf.Session()
+        # self.sess = tf.Session()
         self.writer = SummaryWriter(self.tensorboard_dir)
-        self.sess.__enter__()  # equivalent to `with self.sess:`
+        # self.sess.__enter__()  # equivalent to `with self.sess:`
 
         """ initializing replay_buffer """
         if self.Q_learning == 1:
@@ -2215,44 +2220,44 @@ class LocalPlanner(object):
     def train_one_step_QAQTATTATQAQ2(self, only_update_critic=False):
         
         # update critic
-        if not self.openai_Q:
-            if only_update_critic == False or self.use_Value == True:
-                if not self.replay_buffer.can_sample(self.batch_size):
-                    return 0
+        # if not self.openai_Q:
+        #     if only_update_critic == False or self.use_Value == True:
+        #         if not self.replay_buffer.can_sample(self.batch_size):
+        #             return 0
 
-                all_obs_batch, all_a_batch, prob_batch, all_rew_batch, all_rew2_batch, grouping, a_label_batch, grouping2, act_batch, obs_batch, rew_batch, next_obs_batch, done_batch, num_a_batch, value_batch, next_value_batch, next_state_things = self.replay_buffer.sample(
-                    self.batch_size, sars=True)
-                next_all_obs_batch, next_all_a_batch, _, _, _, _, next_a_label_batch, next_grouping2, next_act_batch, _, _, _, _, _, _, _ = next_state_things
-                # tmp:only use all_rew_batch
+        #         all_obs_batch, all_a_batch, prob_batch, all_rew_batch, all_rew2_batch, grouping, a_label_batch, grouping2, act_batch, obs_batch, rew_batch, next_obs_batch, done_batch, num_a_batch, value_batch, next_value_batch, next_state_things = self.replay_buffer.sample(
+        #             self.batch_size, sars=True)
+        #         next_all_obs_batch, next_all_a_batch, _, _, _, _, next_a_label_batch, next_grouping2, next_act_batch, _, _, _, _, _, _, _ = next_state_things
+        #         # tmp:only use all_rew_batch
 
-            """
-            # debug for ReplayBuffer
-            n = 100
-            s_episode = [np.arange(i,i+5) for i in np.arange(n)]
-            all_a_episode = [np.eye(3)]*n   #[](n,da)
-            prob_episode = [np.array([0,0,1])]*n
-            r_episode = np.arange(n)
-            a_label_episode = np.ones(100,dtype=np.int32)
-            num_traj_list = np.ones(100,dtype=np.int32)*3
-            done_array = np.zeros(n,dtype = np.int32)
-            done_array[-1] = 1
-            rb = ReplayBuffer_QAQ(100)
-            rb.store_frames(s_episode, all_a_episode,prob_episode, r_episode, a_label_episode, num_traj_list,done_array)
-            all_obs_batch, all_a_batch,prob_batch, all_rew_batch, grouping, a_label_batch,grouping2, act_batch, obs_batch, rew_batch, next_obs_batch, done_batch,num_a_batch = rb.sample(n-1)
-            """
+        #     """
+        #     # debug for ReplayBuffer
+        #     n = 100
+        #     s_episode = [np.arange(i,i+5) for i in np.arange(n)]
+        #     all_a_episode = [np.eye(3)]*n   #[](n,da)
+        #     prob_episode = [np.array([0,0,1])]*n
+        #     r_episode = np.arange(n)
+        #     a_label_episode = np.ones(100,dtype=np.int32)
+        #     num_traj_list = np.ones(100,dtype=np.int32)*3
+        #     done_array = np.zeros(n,dtype = np.int32)
+        #     done_array[-1] = 1
+        #     rb = ReplayBuffer_QAQ(100)
+        #     rb.store_frames(s_episode, all_a_episode,prob_episode, r_episode, a_label_episode, num_traj_list,done_array)
+        #     all_obs_batch, all_a_batch,prob_batch, all_rew_batch, grouping, a_label_batch,grouping2, act_batch, obs_batch, rew_batch, next_obs_batch, done_batch,num_a_batch = rb.sample(n-1)
+        #     """
 
-            if self.ebm == 1:
-                if self.use_Value == 1:
-                    self.update_critic(
-                        obs_batch, next_obs_batch, rew_batch, done_batch)
-                if only_update_critic == True:
-                    return 0
+        #     if self.ebm == 1:
+        #         if self.use_Value == 1:
+        #             self.update_critic(
+        #                 obs_batch, next_obs_batch, rew_batch, done_batch)
+        #         if only_update_critic == True:
+        #             return 0
 
-            if only_update_critic == True:
-                return 0
+        #     if only_update_critic == True:
+        #         return 0
 
         # if not only update critic:
-        print("""train""")
+        # print("""train""")
         if self.ebm:
             if self.use_Value == 1:
 
@@ -2387,7 +2392,7 @@ class LocalPlanner(object):
                 'policy_entropy', policy_entropy, global_step=self.steps)
             # simulate the runner.run()
         # obs, states, rewards, masks, actions, values, epinfos = runner.run()
-        elif self.openai_ppo2:
+        elif self.openai_ppo2: 
             model, nminibatches, nupdates, lr, cliprange, noptepochs, nbatch_train, epinfobuf = self.openai_things
             assert self.batch_size % nminibatches == 0
             # Start timer
@@ -2450,14 +2455,17 @@ class LocalPlanner(object):
                     'loss/' + lossname, lossval, global_step=self.steps)
 
         elif self.openai_ddpg:
-            if memory.nb_entries >= batch_size and t_train % param_noise_adaption_interval == 0:
-                distance = self.agent.adapt_param_noise()
-                epoch_adaptive_distances.append(distance)
+            print("""train""")
+            # if memory.nb_entries >= batch_size and t_train % param_noise_adaption_interval == 0:
+            #     distance = self.agent.adapt_param_noise()
+            #     epoch_adaptive_distances.append(distance)
 
             cl, al = self.agent.train()
-            epoch_critic_losses.append(cl)
-            epoch_actor_losses.append(al)
             self.agent.update_target_net()
+
+            self.writer.add_scalar('actor_loss', al, global_step=self.steps)
+            self.writer.add_scalar('critic_loss', cl, global_step=self.steps)
+
 
         else:
             ob_no = all_obs_batch
@@ -2545,13 +2553,14 @@ class LocalPlanner(object):
         self.r3_history.append(av3)
 
         # ?????????????????/try!!!!!!!!!!!!!!!!
-        if av2 > -0.02:
-            r_n = r3_n
+        # if av2 > -0.02:
+        #     r_n = r3_n
 
         # r_n = np.array(r2_n) + np.array(r3_n)
         # r_n = np.array(r3_n)
         n = len(r_n)
 
+        # add episode to buffer 
         if self.openai_Q:
             if collision:
                 done_array = np.zeros(n, dtype=np.int32)
@@ -2569,6 +2578,35 @@ class LocalPlanner(object):
             self.r_episode3 = []
             self.a_label_episode = []
             self.s_episode = []
+
+        elif self.openai_ddpg:
+            # self.agent.store_transition(obs, action, r, new_obs, done)
+            r_n = np.float_(r_n)
+            if collision:
+                print("collision on episode")
+                done_array = np.zeros(n, dtype=np.int32)
+                done_array[-1] = 1
+                self.agent.store_transition(np.array(self.s_episode[:-1]), np.array(self.a_label_episode), r_n, self.s_episode[1:], done_array)
+            else: 
+                print("one episode end")
+                done_array = np.zeros(n-1, dtype=np.int32)
+                self.agent.store_transition(np.array(self.s_episode[:-2]), np.array(self.a_label_episode[:-1]), r_n[:-1], self.s_episode[1:-1], done_array)
+            self.r_episode1 = []
+            self.r_episode2 = []
+            self.r_episode3 = []
+            self.a_label_episode = []
+            self.s_episode = []
+
+            # # Episode done.
+            # epoch_episode_rewards.append(episode_reward[d])
+            # episode_rewards_history.append(episode_reward[d])
+            # epoch_episode_steps.append(episode_step[d])
+            # episode_reward[d] = 0.
+            # episode_step[d] = 0
+            # epoch_episodes += 1
+            # episodes += 1
+            # if nenvs == 1:
+            #     self.agent.reset()
 
         elif self.openai_a2c or self.openai_ppo2:
             if collision:
@@ -2640,6 +2678,7 @@ class LocalPlanner(object):
             self.num_traj_list = self.num_traj_list[-self.T_reward_computing:]
 
         self.episodes_step += 1
+
 
     def run_step(self, debug=True, training=False):
         """
@@ -2717,31 +2756,7 @@ class LocalPlanner(object):
 
         [i.set_autopilot(True) for i in self.vehicle_list]
         
-        if len(self.collision_history) > 0:  # collision
-            print('collision !')
-            self.collision_history.pop(0)
-            self.collision_log.append(self.steps)
-            self.writer.add_scalar('collision_history', len(
-                self.collision_log), global_step=self.steps)
 
-            # end this episode and compute r
-            if not self.ebm:
-                r3 = -10
-            else:
-                if self.Q_learning == True:
-                    r3 = -200  # to ensure intial r is above this value
-                else:
-                    r3 = -10
-            self.conclude_one_episode([r1, r2, r3], done=True, collision=True)
-            self.reset_vehicle_rl()
-            self.buffer_every_maximum = 0
-            return self.default_contro
-        elif self.buffer_every_maximum % self.buffer_every == 0:
-            self.conclude_one_episode([r1, r2, r3], done=True, collision=False)
-            self.reset_vehicle_rl()
-            self.buffer_every_maximum = 0
-            return self.default_control
-            # self.conclude_one_episode(r,done = False)
 
         # if only update critic
         # if self.steps % self.train_every == 0 and self.steps < 1000: #debug for only update critic
@@ -2756,11 +2771,17 @@ class LocalPlanner(object):
                 self.train_one_step_QAQTATTATQAQ2(only_update_critic)
             else:
                 print("""not enough samples, skipped iteration""")
+        elif self.openai_ddpg:
+            if self.steps > 1000:
+                self.train_one_step_QAQTATTATQAQ2(False)
+            else:
+                print("""not enough samples, skipped iteration""")
         else:
             if self.replay_buffer.can_sample(self.batch_size):
                 self.train_one_step_QAQTATTATQAQ2(only_update_critic)
             else:
                 print("""not enough samples, skipped iteration""")
+
 
         # process lidar_frame
         lidar_frame = self.lidar_frame
@@ -2782,10 +2803,45 @@ class LocalPlanner(object):
         #   rl_s_ds = np.concatenate([ d/25.,[v/20.],[self.steer_pre]])
         rl_s_ds = np.concatenate(
             [2 - d*2/(d+10), [v/20.], [self.steer_pre]])  # old
+        self.new_obs = rl_s_ds
         rl_s_ds2 = np.concatenate([img, [v/20.], [self.steer_pre]])
 
         self.s_episode.append(rl_s_ds)
         # self.r_episode.append(r)#this is the reward because of last action
+
+        if len(self.collision_history) > 0:  # collision
+            print('collision !')
+            self.collision_history.pop(0)
+            self.collision_log.append(self.steps)
+            self.writer.add_scalar('collision_history', len(
+                self.collision_log), global_step=self.steps)
+
+            # end this episode and compute r
+            if not self.ebm:
+                r3 = -10
+            else:
+                if self.Q_learning == True:
+                    r3 = -100  # to ensure intial r is above this value
+                else:
+                    r3 = -100
+            self.conclude_one_episode([r1, r2, r3], done=True, collision=True)
+            # self.agent.store_transition(self.old_obs, self.old_action, r1+r2+r3, self.new_obs, 1)
+            self.reset_vehicle_rl()
+            self.buffer_every_maximum = 0
+            return self.default_control
+        elif self.buffer_every_maximum % self.buffer_every == 0:
+
+            self.conclude_one_episode([r1, r2, r3], done=True, collision=False)
+            # self.agent.store_transition(self.old_obs, self.old_action, r1+r2+r3, self.new_obs, 0)
+            self.reset_vehicle_rl()
+            self.buffer_every_maximum = 0
+            return self.default_control
+            # self.conclude_one_episode(r,done = False)
+        # elif self.old_obss:
+
+        #     print(self.old_obs.shape[0])
+        #     self.agent.store_transition(self.old_obs, self.old_action, r1+r2+r3, self.new_obs, 0)
+
 
         # choose action
         if self.ebm == 1:  # sampling from policy
@@ -2883,7 +2939,7 @@ class LocalPlanner(object):
                 kwargs['update_param_noise_scale'] = True
             action = act(np.array(obs)[None],
                          update_eps=update_eps, **kwargs)[0]
-
+            
             if self.Q_with_trajectory == 0:
                 # end-to-end Q, directly control the steering wheel
                 # let's define several steer number:
@@ -2928,6 +2984,8 @@ class LocalPlanner(object):
             self.target_location = tranform1.location + \
                 forward * 10 + left*(-steer[action])
 
+            print(self.target_location, " dll ", action)
+            assert a is not None
             self.a_label_episode.append(actions)
             self.value_episode.append(value)
 
@@ -2936,14 +2994,22 @@ class LocalPlanner(object):
 
         elif self.openai_ddpg == 1:
             obs = rl_s_ds
-            action, q, _, _ = self.agent.step(obs, apply_noise=True, compute_Q=True)
+            self.old_obs = obs
+            self.old_obss = True
+            action, q, _, _ = self.agent.step(obs, apply_noise=False, compute_Q=True)
+            action = action[0][0]
+            action = action.astype(np.float64)
+            # action = action * 10 * self.max_action
+            # action = np.clip(action, -0.2, 0.2)
+            self.old_action = action
+            print("action: ", action)
+            
             tranform1 = self._vehicle.get_transform()
             forward = tranform1.get_forward_vector()
             left = carla.Vector3D(-forward.y, forward.x, forward.z)
 
             self.target_location = tranform1.location + \
                 forward * 10 + left*(-action)
-
             self.a_label_episode.append(action)
         
         else:  # sampling from policy but of pg
@@ -3008,20 +3074,19 @@ class LocalPlanner(object):
         # dis = self._compute_carfollowing_distance(self._current_waypoint)
         dis = min(d[self.lidar_points_per_frame//2],
                   d[(self.lidar_points_per_frame-1)//2])  # use the middle lms
-        print(dis, " kkk ", self.target_location)
 
         control = self._vehicle_controller.run_step(
-            min(max(dis*1.6-8, 0), 80), self.target_location)
+            min(max(dis*1.6-8, 0), 80), self.target_location) 
 
         # action
         if (self.openai_Q and not self.Q_with_trajectory) or self.openai_a2c:
-            
             control.steer = steer[action]
             print('action ', action, ' control steer: ', steer[action])
         elif self.openai_ddpg:
+            # action = action.astype(np.float64)
             control.steer = action
         
-
+        # setting reward r1 and r2
         if not self.ebm and not self.openai_Q and not self.openai_a2c and not self.openai_ppo2 \
                                         and not self.openai_ddpg:
             control.steer = float(ac[0]/2)
@@ -3064,7 +3129,7 @@ class LocalPlanner(object):
         # vehicle_transform = self._vehicle.get_transform()
         # self.purge_waypoint(vehicle_transform,self._waypoint_buffer,self._min_distance,self._max_distance)
         # self.purge_waypoint(vehicle_transform,self._waypoints_queue,self._min_distance,self._max_distance)
-
+ 
         if debug:
             draw_locations(self._vehicle.get_world(), [self.target_location])
 
